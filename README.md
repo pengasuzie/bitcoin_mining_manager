@@ -1,7 +1,7 @@
 # Bitcoin Mining Manager
 
 ## Overview
-The **Bitcoin Mining Manager** is a Python-based software system designed to manage a Bitcoin mining data center housed in a shipping container in remote Africa. Running on a **Beelink SER5 Pro** mini PC, it controls 160 ASICs, monitors energy supply and demand, manages internet connectivity, and provides real-time dashboards and alerts. The system optimizes mining operations in a harsh environment (high temperatures, dust, humidity) by dynamically adjusting ASIC activity based on energy availability.
+The **Bitcoin Mining Manager** is a Python-based software system designed to manage a Bitcoin mining data center housed in a shipping container in remote places. Running on a **Beelink SER5 Pro** mini PC, it controls 160 ASICs, monitors energy supply and demand, manages internet connectivity, and provides real-time dashboards and alerts. The system optimizes mining operations in a harsh environment (high temperatures, dust, humidity) by dynamically adjusting ASIC activity based on energy availability.
 
 This repository contains the core software (`bitcoin_mining_manager.py`) and supporting files for developers to deploy, customize, and optimize the system during a 3–6-month pilot period. The project is built for **Ubuntu Server 24.04 LTS** and integrates with industrial sensors, networking tools, and monitoring platforms.
 
