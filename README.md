@@ -54,3 +54,187 @@ This repository contains the core software (`bitcoin_mining_manager.py`) and sup
   - Current/voltage transformers (USB/Ethernet, MQTT) for power monitoring.
 
 ## Project Structure
+bitcoin-mining-manager/
+├── bitcoin_mining_manager.py  # Main Python script
+├── requirements.txt           # Python dependencies
+├── README.md                 # Project documentation
+├── .gitignore                # Git ignore file
+├── .env.example              # Template for environment variables
+└── mining_manager.log        # Log file (generated on run)
+
+text
+
+
+## Prerequisites
+- **Operating System**: Ubuntu Server 24.04 LTS.
+- **Hardware**: Beelink SER5 Pro configured with cooling and enclosure.
+- **Sensors**: SEL-735 and power sensors installed and networked.
+- **Networking**: 4G LTE dongle, Starlink, and USB Ethernet adapter.
+- **Accounts**:
+  - Twilio account for SMS alerts.
+  - Grafana API key for alert integration.
+
+## Installation
+1. **Clone the Repository**:
+   ```bash
+   git clone https://github.com/your-username/bitcoin-mining-manager.git
+   cd bitcoin-mining-manager
+Install System Dependencies:
+bash
+
+sudo apt update
+sudo apt install -y python3.11 python3-pip redis-server mosquitto grafana
+Install Python Dependencies:
+bash
+
+pip3 install -r requirements.txt
+requirements.txt:
+text
+
+aiohttp>=3.8.5
+paho-mqtt>=1.6.1
+pymodbus>=3.6.4
+redis>=5.0.1
+flask>=2.2.2
+grafana-api>=1.0.3
+prometheus-client>=0.17.0
+python-dotenv>=1.0.0
+twilio>=8.10.0
+Configure Environment Variables:
+Copy .env.example to .env:
+bash
+
+cp .env.example .env
+Edit .env with your settings:
+text
+
+GRID_SENSOR_IP=192.168.1.100
+ASIC_API_URL=http://192.168.1.200:4028
+MQTT_BROKER=localhost
+GRAFANA_HOST=localhost:3000
+GRAFANA_API_KEY=your_grafana_api_key
+TWILIO_SID=your_twilio_sid
+TWILIO_TOKEN=your_twilio_token
+TWILIO_FROM=+1234567890
+TWILIO_TO=+0987654321
+ALERT_THRESHOLD=49.5
+POLL_INTERVAL=10
+ASIC_POWER=3.5
+Set Up Services:
+Grafana:
+bash
+
+sudo systemctl enable grafana-server
+sudo systemctl start grafana-server
+Access at http://localhost:3000 and configure dashboards.
+Prometheus:
+bash
+
+wget https://github.com/prometheus/prometheus/releases/download/v2.45.0/prometheus-2.45.0.linux-amd64.tar.gz
+tar xvfz prometheus-*.tar.gz
+sudo mv prometheus-*/prometheus /usr/local/bin/
+sudo nano /etc/systemd/system/prometheus.service
+Add:
+text
+
+[Unit]
+Description=Prometheus
+After=network.target
+[Service]
+ExecStart=/usr/local/bin/prometheus --config.file=/etc/prometheus/prometheus.yml
+Restart=always
+[Install]
+WantedBy=multi-user.target
+Configure /etc/prometheus/prometheus.yml to scrape localhost:8000.
+bash
+
+sudo systemctl enable prometheus
+sudo systemctl start prometheus
+Mosquitto:
+bash
+
+sudo systemctl enable mosquitto
+sudo systemctl start mosquitto
+OpenMPTCProuter:
+bash
+
+sudo apt install openmptcprouter
+sudo omr-admin bond eth0 usb0
+Run the Script:
+Test manually:
+bash
+
+python3 bitcoin_mining_manager.py
+Set up as a systemd service:
+bash
+
+sudo nano /etc/systemd/system/mining-manager.service
+Add:
+text
+
+[Unit]
+Description=Bitcoin Mining Manager
+After=network.target redis-server.service mosquitto.service
+[Service]
+ExecStart=/usr/bin/python3 /path/to/bitcoin-mining-manager/bitcoin_mining_manager.py
+WorkingDirectory=/path/to/bitcoin-mining-manager
+Restart=always
+User=ubuntu
+Environment=PYTHONUNBUFFERED=1
+[Install]
+WantedBy=multi-user.target
+bash
+
+sudo systemctl enable mining-manager
+sudo systemctl start mining-manager
+
+
+## Development Tasks
+- **Developers are expected to**:
+
+-- **Sensor Integration**:
+Implement MQTT parsing in read_power_sensors() for specific current/voltage sensors.
+Test SEL-735 connectivity and calibrate frequency readings.
+
+-- **ASIC Integration**:
+Configure CGMiner API endpoints for 160 ASICs.
+Populate SQLite database with ASIC IDs.
+Optimize async API calls for <2-second latency.
+
+-- **Performance Optimization**:
+Monitor CPU usage (<80% under full load) using htop.
+Adjust POLL_INTERVAL or add Redis caching strategies for scalability.
+Minimize share loss (<1%) via robust bonding.
+
+-- **Reliability**:
+Stress test for grid frequency drops, power outages, and internet failures.
+Ensure thermal stability with cooling (check sensors command).
+Enhance error handling for edge cases.
+
+-- **Dashboards/Alerts**:
+Create Grafana dashboards for grid frequency, ASIC status, power, and network.
+Configure Prometheus alerts for critical thresholds.
+Test Twilio SMS delivery.
+
+-- **Pilot Period (3–6 Months)**:
+Month 1–2: Setup hardware, sensors, and initial ASIC testing (10–20 units).
+Month 3–4: Scale to 160 ASICs, bond internet, deploy dashboards.
+Month 5–6: Optimize performance, stress test, and document.
+
+## Contributing
+Code Style: Follow PEP 8 for Python. Use type hints where applicable.
+Commits: Use clear messages (e.g., "Add Redis caching for ASIC status").
+Branches: Create feature branches (e.g., feat/mqtt-sensor) and submit pull requests to main.
+Issues: Report bugs or enhancements via GitHub Issues.
+
+## Testing:
+Test locally with mock sensors and a small ASIC setup.
+Use unittest for critical functions (e.g., control_asics).
+Simulate outages to verify dummy pool.
+
+## Troubleshooting
+Sensor Errors: Check Modbus TCP (GRID_SENSOR_IP) or MQTT (MQTT_BROKER) connectivity.
+ASIC API Failures: Verify ASIC_API_URL and network switch configuration.
+High CPU Usage: Increase POLL_INTERVAL or optimize async calls.
+Logs: Review mining_manager.log for detailed errors.
+Thermal Issues: Monitor CPU temperature:
