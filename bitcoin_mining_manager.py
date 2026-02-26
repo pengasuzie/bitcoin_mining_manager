@@ -38,6 +38,8 @@ ASIC_POWER = float(os.getenv("ASIC_POWER", "3.5"))
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 MOCK_MODE = os.getenv("MOCK_MODE", "false").lower() == "true"
+API_HOST = os.getenv("API_HOST", "127.0.0.1")
+API_PORT = int(os.getenv("API_PORT", "5000"))
 LOG_FILE = os.getenv("LOG_FILE", "mining_manager.log")
 MINING_POOL_HOST = os.getenv("MINING_POOL_HOST", "pool.example.com")
 
@@ -58,6 +60,12 @@ network_status = Gauge("network_status", "Internet connectivity (1=up, 0=down)")
 # Thread-safe storage for latest MQTT sensor readings
 _sensor_lock = threading.Lock()
 _sensor_data = {"current": 0.0, "voltage": 0.0}
+
+# Latest metric values (stored alongside Prometheus Gauges for reading without private API)
+_latest_freq = 0.0
+_latest_active_asics = 0
+_latest_power = 0.0
+_latest_network = 0
 
 # Service clients (initialized lazily in init_services())
 conn = None
@@ -80,6 +88,17 @@ def validate_config():
         errors.append("POLL_INTERVAL must be positive")
     if ALERT_THRESHOLD <= 0:
         errors.append("ALERT_THRESHOLD must be positive")
+    if errors:
+        for err in errors:
+            logger.error(f"Config error: {err}")
+        raise SystemExit("Invalid configuration — see errors above")
+
+    # Detect placeholder credentials left from copy-paste
+    placeholders = {"your_twilio_sid", "your_twilio_token", "your_grafana_api_key"}
+    if TWILIO_SID in placeholders or TWILIO_TOKEN in placeholders:
+        errors.append("Twilio credentials contain placeholder values — update .env or clear them")
+    if GRAFANA_API_KEY in placeholders:
+        errors.append("Grafana API key contains a placeholder value — update .env or clear it")
     if errors:
         for err in errors:
             logger.error(f"Config error: {err}")
@@ -190,6 +209,7 @@ def read_power_sensors():
 
 async def control_asics(freq_value, power_available, session):
     """Adjust ASIC on/off based on grid frequency and power availability."""
+    global _latest_active_asics
     try:
         cursor.execute("SELECT id, cycles FROM asics ORDER BY cycles ASC, last_off ASC")
         asics = cursor.fetchall()
@@ -221,6 +241,7 @@ async def control_asics(freq_value, power_available, session):
                             logger.info(f"Stopped ASIC {asic_id}")
         conn.commit()
         asic_count.set(active_count)
+        _latest_active_asics = active_count
     except Exception as e:
         logger.error(f"Error controlling ASICs: {e}")
 
@@ -230,10 +251,11 @@ _dummy_pool_proc = None
 
 def run_dummy_pool():
     """Start local Stratum server if internet is down. Track the process to avoid duplicates."""
-    global _dummy_pool_proc
+    global _dummy_pool_proc, _latest_network
     try:
         subprocess.run(["ping", "-c", "1", MINING_POOL_HOST], timeout=5, check=True)
         network_status.set(1)
+        _latest_network = 1
         # Internet is back — stop dummy pool if running
         if _dummy_pool_proc and _dummy_pool_proc.poll() is None:
             _dummy_pool_proc.terminate()
@@ -242,6 +264,7 @@ def run_dummy_pool():
         return
     except subprocess.SubprocessError:
         network_status.set(0)
+        _latest_network = 0
         # Only spawn if not already running
         if _dummy_pool_proc and _dummy_pool_proc.poll() is None:
             return
@@ -271,10 +294,10 @@ def dashboard():
     """Serve real-time dashboard data."""
     try:
         return jsonify({
-            "grid_frequency": grid_freq._value.get(),
-            "active_asics": asic_count._value.get(),
-            "power_usage": power_usage._value.get(),
-            "network_status": network_status._value.get(),
+            "grid_frequency": _latest_freq,
+            "active_asics": _latest_active_asics,
+            "power_usage": _latest_power,
+            "network_status": _latest_network,
         })
     except Exception as e:
         logger.error(f"Error serving dashboard: {e}")
@@ -296,16 +319,19 @@ def send_alert(message):
 
 async def main_loop():
     """Main loop for monitoring and control."""
+    global _latest_freq, _latest_power, _latest_network
     async with aiohttp.ClientSession() as session:
         while True:
             try:
                 # Monitor energy demand
                 freq = await read_grid_frequency()
                 grid_freq.set(freq)
+                _latest_freq = freq
 
                 # Monitor power supply
                 power = read_power_sensors()
                 power_usage.set(power)
+                _latest_power = power
 
                 # Control ASICs
                 await control_asics(freq, power, session)
@@ -316,7 +342,7 @@ async def main_loop():
                 # Alerts
                 if freq < ALERT_THRESHOLD:
                     send_alert(f"Grid frequency dropped to {freq} Hz")
-                if power_usage._value.get() > 560:  # 160 ASICs * 3.5 kW
+                if power > 560:  # 160 ASICs * 3.5 kW
                     send_alert("Power usage exceeded safe threshold")
 
             except Exception as e:
@@ -335,10 +361,10 @@ if __name__ == "__main__":
 
     # Start Flask API in a separate thread
     from threading import Thread
-    flask_thread = Thread(target=lambda: app.run(host="0.0.0.0", port=5000, threaded=True))
+    flask_thread = Thread(target=lambda: app.run(host=API_HOST, port=API_PORT, threaded=True))
     flask_thread.daemon = True
     flask_thread.start()
-    logger.info("Flask API started on port 5000")
+    logger.info(f"Flask API started on {API_HOST}:{API_PORT}")
 
     # Configure internet bonding once at startup
     bond_internet()
