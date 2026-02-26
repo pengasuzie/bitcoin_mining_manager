@@ -1,5 +1,6 @@
 import logging
 import sqlite3
+import threading
 
 import redis
 
@@ -10,6 +11,7 @@ logger = logging.getLogger(__name__)
 conn = None
 cursor = None
 redis_client = None
+db_lock = threading.Lock()
 
 
 def init_db():
@@ -33,3 +35,21 @@ def init_db():
     )
     redis_client.ping()
     logger.info("Redis connected")
+
+
+def register_asics(count, prefix="asic"):
+    """Register ASICs in the database. Skips IDs that already exist."""
+    added = 0
+    for i in range(count):
+        asic_id = f"{prefix}-{i:03d}"
+        cursor.execute("INSERT OR IGNORE INTO asics (id) VALUES (?)", (asic_id,))
+        added += cursor.rowcount
+    conn.commit()
+    logger.info(f"Registered {added} new ASICs ({count - added} already existed)")
+    return added
+
+
+def list_asics():
+    """Return all registered ASICs sorted by ID."""
+    cursor.execute("SELECT id, cycles, last_off FROM asics ORDER BY id")
+    return cursor.fetchall()

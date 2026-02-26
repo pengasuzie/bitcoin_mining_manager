@@ -3,6 +3,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def clear_cooldown():
+    """Reset alert cooldown state between tests."""
+    from bitcoin_mining_manager import alerts
+    alerts._last_alert_times.clear()
+
+
 def test_send_alert_twilio_only():
     """Alert should send via Twilio when configured, skip Grafana when not."""
     with patch("bitcoin_mining_manager.alerts.GRAFANA_API_KEY", ""), \
@@ -39,3 +46,48 @@ def test_send_alert_grafana_only():
         alerts.send_alert("test message")
 
         mock_grafana.alerts.create_alert.assert_called_once_with({"message": "test message"})
+
+
+def test_cooldown_suppresses_duplicate():
+    """Same alert_type within cooldown window should not send twice."""
+    with patch("bitcoin_mining_manager.alerts.GRAFANA_API_KEY", ""), \
+         patch("bitcoin_mining_manager.alerts.ALERT_COOLDOWN", 300):
+        from bitcoin_mining_manager import alerts
+        alerts.twilio_client = MagicMock()
+
+        alerts.send_alert("freq low 49.2 Hz", alert_type="freq_low")
+        alerts.send_alert("freq low 49.1 Hz", alert_type="freq_low")
+
+        # Only one call despite two send_alert invocations
+        assert alerts.twilio_client.messages.create.call_count == 1
+
+
+def test_cooldown_allows_different_types():
+    """Different alert types should fire independently."""
+    with patch("bitcoin_mining_manager.alerts.GRAFANA_API_KEY", ""), \
+         patch("bitcoin_mining_manager.alerts.ALERT_COOLDOWN", 300):
+        from bitcoin_mining_manager import alerts
+        alerts.twilio_client = MagicMock()
+
+        alerts.send_alert("freq low", alert_type="freq_low")
+        alerts.send_alert("power high", alert_type="power_high")
+
+        assert alerts.twilio_client.messages.create.call_count == 2
+
+
+def test_cooldown_expires(monkeypatch):
+    """After cooldown expires, the same alert type should fire again."""
+    import time
+    current = [1000.0]
+    monkeypatch.setattr(time, "time", lambda: current[0])
+
+    with patch("bitcoin_mining_manager.alerts.GRAFANA_API_KEY", ""), \
+         patch("bitcoin_mining_manager.alerts.ALERT_COOLDOWN", 300):
+        from bitcoin_mining_manager import alerts
+        alerts.twilio_client = MagicMock()
+
+        alerts.send_alert("freq low", alert_type="freq_low")
+        current[0] = 1301.0  # 301 seconds later
+        alerts.send_alert("freq low again", alert_type="freq_low")
+
+        assert alerts.twilio_client.messages.create.call_count == 2

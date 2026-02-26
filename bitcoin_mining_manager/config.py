@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 
@@ -26,7 +27,9 @@ MOCK_MODE = os.getenv("MOCK_MODE", "false").lower() == "true"
 API_HOST = os.getenv("API_HOST", "127.0.0.1")
 API_PORT = int(os.getenv("API_PORT", "5000"))
 MAX_POWER = float(os.getenv("MAX_POWER", "560"))  # kW — safety ceiling (160 ASICs * 3.5 kW)
+ALERT_COOLDOWN = int(os.getenv("ALERT_COOLDOWN", "300"))  # seconds between repeated alerts
 LOG_FILE = os.getenv("LOG_FILE", "mining_manager.log")
+LOG_FORMAT = os.getenv("LOG_FORMAT", "text")  # "text" or "json"
 MINING_POOL_HOST = os.getenv("MINING_POOL_HOST", "pool.example.com")
 
 # Logging setup
@@ -35,6 +38,21 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[logging.FileHandler(LOG_FILE), logging.StreamHandler()],
 )
+
+if LOG_FORMAT == "json":
+    class _JsonFormatter(logging.Formatter):
+        def format(self, record):
+            return json.dumps({
+                "time": self.formatTime(record),
+                "level": record.levelname,
+                "logger": record.name,
+                "message": record.getMessage(),
+            })
+
+    _json_fmt = _JsonFormatter()
+    for _handler in logging.root.handlers:
+        _handler.setFormatter(_json_fmt)
+
 logger = logging.getLogger(__name__)
 
 # Prometheus metrics

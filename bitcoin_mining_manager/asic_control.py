@@ -10,8 +10,10 @@ logger = logging.getLogger(__name__)
 async def control_asics(freq_value, power_available, session):
     """Adjust ASIC on/off based on grid frequency and power availability."""
     try:
-        db.cursor.execute("SELECT id, cycles FROM asics ORDER BY cycles ASC, last_off ASC")
-        asics = db.cursor.fetchall()
+        with db.db_lock:
+            db.cursor.execute("SELECT id, cycles FROM asics ORDER BY cycles ASC, last_off ASC")
+            asics = db.cursor.fetchall()
+
         max_asics = min(len(asics), int(power_available / ASIC_POWER))
         if freq_value <= ALERT_THRESHOLD:
             max_asics = 0
@@ -33,12 +35,14 @@ async def control_asics(freq_value, power_available, session):
                     async with session.get(f"{ASIC_API_URL}/stop?asic={asic_id}") as resp:
                         if resp.status == 200:
                             db.redis_client.setex(cache_key, 60, "off")
-                            db.cursor.execute(
-                                "UPDATE asics SET cycles = cycles + 1, last_off = ? WHERE id = ?",
-                                (datetime.now().isoformat(), asic_id),
-                            )
+                            with db.db_lock:
+                                db.cursor.execute(
+                                    "UPDATE asics SET cycles = cycles + 1, last_off = ? WHERE id = ?",
+                                    (datetime.now().isoformat(), asic_id),
+                                )
                             logger.info(f"Stopped ASIC {asic_id}")
-        db.conn.commit()
+        with db.db_lock:
+            db.conn.commit()
         asic_count_gauge.set(active_count)
         metrics["active_asics"] = active_count
     except Exception as e:

@@ -1,9 +1,11 @@
 import logging
+import time
 
 from grafana_api.grafana_face import GrafanaFace
 from twilio.rest import Client
 
 from bitcoin_mining_manager.config import (
+    ALERT_COOLDOWN,
     GRAFANA_API_KEY, GRAFANA_HOST,
     TWILIO_SID, TWILIO_TOKEN, TWILIO_FROM, TWILIO_TO,
 )
@@ -11,6 +13,7 @@ from bitcoin_mining_manager.config import (
 logger = logging.getLogger(__name__)
 
 twilio_client = None
+_last_alert_times = {}
 
 
 def init_alerts():
@@ -21,8 +24,19 @@ def init_alerts():
         logger.info("Twilio client configured")
 
 
-def send_alert(message):
-    """Send alerts via Grafana and/or Twilio SMS."""
+def send_alert(message, alert_type=None):
+    """Send alerts via Grafana and/or Twilio SMS.
+
+    Uses alert_type (or the message itself) as a cooldown key to prevent
+    flooding. The same alert type won't fire more than once per
+    ALERT_COOLDOWN seconds.
+    """
+    key = alert_type or message
+    now = time.time()
+    if key in _last_alert_times and now - _last_alert_times[key] < ALERT_COOLDOWN:
+        return
+    _last_alert_times[key] = now
+
     try:
         if GRAFANA_API_KEY:
             grafana = GrafanaFace(auth=GRAFANA_API_KEY, host=GRAFANA_HOST)
