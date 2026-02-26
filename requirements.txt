@@ -1,0 +1,10 @@
+aiohttp>=3.8.5
+paho-mqtt>=2.0.0
+pymodbus>=3.6.4
+redis>=5.0.1
+flask>=2.2.2
+grafana-api>=1.0.3
+prometheus-client>=0.17.0
+python-dotenv>=1.0.0
+twilio>=8.10.0
+pytest>=7.4.0
