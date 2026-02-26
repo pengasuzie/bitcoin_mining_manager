@@ -193,21 +193,22 @@ async def control_asics(freq_value, power_available, session):
     try:
         cursor.execute("SELECT id, cycles FROM asics ORDER BY cycles ASC, last_off ASC")
         asics = cursor.fetchall()
-        active_count = 0
         max_asics = min(len(asics), int(power_available / ASIC_POWER))
+        if freq_value <= ALERT_THRESHOLD:
+            max_asics = 0
 
-        for asic_id, cycles in asics:
+        active_count = 0
+        for i, (asic_id, cycles) in enumerate(asics):
             cache_key = f"asic:{asic_id}:status"
-            should_be_active = active_count < max_asics and freq_value > ALERT_THRESHOLD
+            should_be_active = i < max_asics
 
             if should_be_active:
-                # Check cache to avoid redundant API calls
                 if redis_client.get(cache_key) != "on":
                     async with session.get(f"{ASIC_API_URL}/start?asic={asic_id}") as resp:
                         if resp.status == 200:
                             redis_client.setex(cache_key, 60, "on")
-                            active_count += 1
                             logger.info(f"Started ASIC {asic_id}")
+                active_count += 1
             else:
                 if redis_client.get(cache_key) != "off":
                     async with session.get(f"{ASIC_API_URL}/stop?asic={asic_id}") as resp:
@@ -224,16 +225,28 @@ async def control_asics(freq_value, power_available, session):
         logger.error(f"Error controlling ASICs: {e}")
 
 
+_dummy_pool_proc = None
+
+
 def run_dummy_pool():
-    """Start local Stratum server if internet is down."""
+    """Start local Stratum server if internet is down. Track the process to avoid duplicates."""
+    global _dummy_pool_proc
     try:
         subprocess.run(["ping", "-c", "1", MINING_POOL_HOST], timeout=5, check=True)
         network_status.set(1)
+        # Internet is back — stop dummy pool if running
+        if _dummy_pool_proc and _dummy_pool_proc.poll() is None:
+            _dummy_pool_proc.terminate()
+            _dummy_pool_proc = None
+            logger.info("Internet restored, stopped local Stratum server")
         return
     except subprocess.SubprocessError:
         network_status.set(0)
+        # Only spawn if not already running
+        if _dummy_pool_proc and _dummy_pool_proc.poll() is None:
+            return
         logger.warning("Internet down, starting local Stratum server")
-        subprocess.Popen(
+        _dummy_pool_proc = subprocess.Popen(
             ["stratum-mining", "--host", "localhost", "--port", "3333"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -297,8 +310,7 @@ async def main_loop():
                 # Control ASICs
                 await control_asics(freq, power, session)
 
-                # Manage connectivity
-                bond_internet()
+                # Check connectivity and manage fallback pool
                 run_dummy_pool()
 
                 # Alerts
@@ -328,6 +340,9 @@ if __name__ == "__main__":
     flask_thread.start()
     logger.info("Flask API started on port 5000")
 
+    # Configure internet bonding once at startup
+    bond_internet()
+
     # Start MQTT client loop in a separate thread
     mqtt_thread = Thread(target=mqtt_client.loop_forever)
     mqtt_thread.daemon = True
@@ -339,6 +354,8 @@ if __name__ == "__main__":
         asyncio.run(main_loop())
     except KeyboardInterrupt:
         logger.info("Shutting down...")
+        if _dummy_pool_proc and _dummy_pool_proc.poll() is None:
+            _dummy_pool_proc.terminate()
         modbus_client.close()
         conn.close()
         mqtt_client.disconnect()
