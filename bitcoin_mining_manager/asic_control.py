@@ -35,7 +35,7 @@ async def control_asics(freq_value, power_available, session):
                             db.redis_client.setex(cache_key, 60, "off")
                             db.cursor.execute(
                                 "UPDATE asics SET cycles = cycles + 1, last_off = ? WHERE id = ?",
-                                (datetime.now(), asic_id),
+                                (datetime.now().isoformat(), asic_id),
                             )
                             logger.info(f"Stopped ASIC {asic_id}")
         db.conn.commit()

@@ -25,6 +25,7 @@ REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 MOCK_MODE = os.getenv("MOCK_MODE", "false").lower() == "true"
 API_HOST = os.getenv("API_HOST", "127.0.0.1")
 API_PORT = int(os.getenv("API_PORT", "5000"))
+MAX_POWER = float(os.getenv("MAX_POWER", "560"))  # kW — safety ceiling (160 ASICs * 3.5 kW)
 LOG_FILE = os.getenv("LOG_FILE", "mining_manager.log")
 MINING_POOL_HOST = os.getenv("MINING_POOL_HOST", "pool.example.com")
 

@@ -7,7 +7,7 @@ from prometheus_client import start_http_server
 
 from bitcoin_mining_manager import db, sensors, networking
 from bitcoin_mining_manager.config import (
-    API_HOST, API_PORT, ALERT_THRESHOLD, POLL_INTERVAL,
+    API_HOST, API_PORT, ALERT_THRESHOLD, POLL_INTERVAL, MAX_POWER,
     grid_freq_gauge, power_usage_gauge, metrics,
     validate_config,
 )
@@ -45,7 +45,7 @@ async def main_loop():
                 # Alerts
                 if freq < ALERT_THRESHOLD:
                     send_alert(f"Grid frequency dropped to {freq} Hz")
-                if power > 560:  # 160 ASICs * 3.5 kW
+                if power > MAX_POWER:
                     send_alert("Power usage exceeded safe threshold")
 
             except Exception as e:
