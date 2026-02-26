@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import logging
+import signal
 from threading import Thread
 
 import aiohttp
@@ -17,15 +18,23 @@ from bitcoin_mining_manager.sensors import init_sensors, read_grid_frequency, re
 from bitcoin_mining_manager.asic_control import control_asics
 from bitcoin_mining_manager.networking import bond_internet, run_dummy_pool
 from bitcoin_mining_manager.api import app
-from bitcoin_mining_manager.alerts import init_alerts, send_alert
+from bitcoin_mining_manager.alerts import init_alerts, send_alert, clear_alert
 
 logger = logging.getLogger(__name__)
+
+_shutdown_event = asyncio.Event()
+
+
+def _shutdown_handler(loop):
+    """Signal handler that triggers graceful shutdown."""
+    logger.info("Shutdown signal received, stopping...")
+    _shutdown_event.set()
 
 
 async def main_loop():
     """Main loop for monitoring and control."""
     async with aiohttp.ClientSession() as session:
-        while True:
+        while not _shutdown_event.is_set():
             try:
                 # Monitor energy demand
                 freq = await read_grid_frequency()
@@ -43,16 +52,24 @@ async def main_loop():
                 # Check connectivity and manage fallback pool
                 run_dummy_pool()
 
-                # Alerts (with cooldown via alert_type keys)
+                # Alerts (with cooldown via alert_type keys) + recovery
                 if freq < ALERT_THRESHOLD:
                     send_alert(f"Grid frequency dropped to {freq} Hz", alert_type="freq_low")
+                else:
+                    clear_alert("freq_low", f"Grid frequency recovered to {freq} Hz")
                 if power > MAX_POWER:
                     send_alert("Power usage exceeded safe threshold", alert_type="power_high")
+                else:
+                    clear_alert("power_high", f"Power usage back to normal ({power} kW)")
 
             except Exception as e:
                 logger.error(f"Main loop error: {e}")
 
-            await asyncio.sleep(POLL_INTERVAL)
+            try:
+                await asyncio.wait_for(_shutdown_event.wait(), timeout=POLL_INTERVAL)
+                break  # shutdown was requested
+            except asyncio.TimeoutError:
+                pass  # normal — poll interval elapsed
 
 
 def run():
@@ -76,24 +93,47 @@ def run():
     bond_internet()
 
     # Start MQTT client loop in a separate thread
-    mqtt_thread = Thread(target=sensors.mqtt_client.loop_forever)
-    mqtt_thread.daemon = True
-    mqtt_thread.start()
-    logger.info("MQTT client loop started")
+    if sensors.mqtt_client:
+        mqtt_thread = Thread(target=sensors.mqtt_client.loop_forever)
+        mqtt_thread.daemon = True
+        mqtt_thread.start()
+        logger.info("MQTT client loop started")
 
-    # Run main async loop
+    # Run main async loop with signal-based graceful shutdown
+    loop = asyncio.new_event_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, _shutdown_handler, loop)
     try:
-        asyncio.run(main_loop())
-    except KeyboardInterrupt:
-        logger.info("Shutting down...")
-        if networking._dummy_pool_proc and networking._dummy_pool_proc.poll() is None:
-            networking._dummy_pool_proc.terminate()
-        sensors.modbus_client.close()
-        db.conn.close()
-        sensors.mqtt_client.disconnect()
+        loop.run_until_complete(main_loop())
     except Exception as e:
         logger.critical(f"Fatal error: {e}")
         raise
+    finally:
+        _cleanup()
+        loop.close()
+
+
+def _cleanup():
+    """Release all resources on shutdown."""
+    logger.info("Cleaning up resources...")
+    try:
+        if networking._dummy_pool_proc and networking._dummy_pool_proc.poll() is None:
+            networking._dummy_pool_proc.terminate()
+    except Exception:
+        pass
+    try:
+        sensors.modbus_client.close()
+    except Exception:
+        pass
+    try:
+        sensors.mqtt_client.disconnect()
+    except Exception:
+        pass
+    try:
+        db.conn.close()
+    except Exception:
+        pass
+    logger.info("Shutdown complete")
 
 
 def main():

@@ -1,7 +1,7 @@
 import logging
 import subprocess
 
-from bitcoin_mining_manager.config import MINING_POOL_HOST, network_status_gauge, metrics
+from bitcoin_mining_manager.config import MOCK_MODE, MINING_POOL_HOST, network_status_gauge, metrics
 
 logger = logging.getLogger(__name__)
 
@@ -10,6 +10,9 @@ _dummy_pool_proc = None
 
 def bond_internet():
     """Configure internet bonding with OpenMPTCProuter."""
+    if MOCK_MODE:
+        logger.info("Internet bonding skipped in mock mode")
+        return
     try:
         subprocess.run(
             ["openmptcprouter", "bond", "eth0", "usb0"],

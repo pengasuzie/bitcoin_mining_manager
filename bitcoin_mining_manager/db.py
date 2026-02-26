@@ -30,11 +30,15 @@ def init_db():
     conn.commit()
     logger.info("SQLite connected")
 
-    redis_client = redis.Redis(
-        host=REDIS_HOST, port=REDIS_PORT, db=0, decode_responses=True
-    )
-    redis_client.ping()
-    logger.info("Redis connected")
+    try:
+        redis_client = redis.Redis(
+            host=REDIS_HOST, port=REDIS_PORT, db=0, decode_responses=True
+        )
+        redis_client.ping()
+        logger.info("Redis connected")
+    except redis.exceptions.ConnectionError:
+        redis_client = None
+        logger.warning("Redis unavailable — running without cache")
 
 
 def register_asics(count, prefix="asic"):

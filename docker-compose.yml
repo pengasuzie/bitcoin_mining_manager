@@ -5,6 +5,11 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
     restart: unless-stopped
 
   mosquitto:
@@ -15,6 +20,11 @@ services:
       - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
       - mosquitto_data:/mosquitto/data
       - mosquitto_log:/mosquitto/log
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -t '$$SYS/broker/uptime' -C 1 -W 3"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
 
   prometheus:
@@ -24,6 +34,11 @@ services:
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/healthy || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
 
   grafana:
@@ -34,6 +49,11 @@ services:
       - grafana_data:/var/lib/grafana
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
 
 volumes:

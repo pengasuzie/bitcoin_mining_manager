@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mining Manager</title>
+<style>
+:root {
+  --bg: #080c18;
+  --card: rgba(255,255,255,0.04);
+  --card-border: rgba(255,255,255,0.07);
+  --card-hover: rgba(255,255,255,0.07);
+  --text: #e0e6f0;
+  --muted: #5a6a88;
+  --blue: #0080FF;
+  --blue-dim: rgba(0,128,255,0.35);
+  --blue-glow: rgba(0,128,255,0.15);
+  --green: #34d399;
+  --red: #f87171;
+  --amber: #fbbf24;
+  --radius: 16px;
+  --radius-sm: 10px;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  background-image:
+    radial-gradient(ellipse at 15% 50%, rgba(0,128,255,0.07) 0%, transparent 55%),
+    radial-gradient(ellipse at 85% 15%, rgba(0,128,255,0.05) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 90%, rgba(0,80,200,0.04) 0%, transparent 50%);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+/* ---- Glass card mixin ---- */
+.glass {
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+/* ---- Header ---- */
+header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 28px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.logo { flex-shrink: 0; }
+header h1 {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+  color: #fff;
+}
+header .subtitle {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+  letter-spacing: 0.3px;
+}
+.conn-badge {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 5px 12px;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  backdrop-filter: blur(12px);
+}
+.conn-badge .dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.conn-ok { background: rgba(52,211,153,0.1); color: var(--green); border: 1px solid rgba(52,211,153,0.15); }
+.conn-ok .dot { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.conn-err { background: rgba(248,113,113,0.1); color: var(--red); border: 1px solid rgba(248,113,113,0.15); }
+.conn-err .dot { background: var(--red); }
+
+/* ---- Main ---- */
+main { padding: 20px 28px 80px; max-width: 1280px; margin: 0 auto; }
+
+/* ---- Gauge row ---- */
+.gauge-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.gauge-card {
+  padding: 20px 20px 16px;
+  text-align: center;
+  position: relative;
+}
+.gauge-card .gauge-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.gauge-svg { display: block; margin: 0 auto; }
+.gauge-bg {
+  fill: none;
+  stroke: rgba(255,255,255,0.06);
+  stroke-width: 14;
+  stroke-linecap: round;
+}
+.gauge-value-arc {
+  fill: none;
+  stroke-width: 14;
+  stroke-linecap: round;
+  transition: stroke-dasharray 0.8s ease, stroke 0.3s ease;
+}
+.gauge-center-value {
+  fill: #fff;
+  font-size: 26px;
+  font-weight: 700;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+.gauge-center-unit {
+  fill: var(--muted);
+  font-size: 11px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+.gauge-threshold-tick {
+  stroke: rgba(255,255,255,0.25);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.gauge-min, .gauge-max {
+  fill: var(--muted);
+  font-size: 9px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+/* ---- Donut chart ---- */
+.donut-svg { display: block; margin: 0 auto; }
+.donut-segment {
+  fill: none;
+  stroke-width: 20;
+  transition: stroke-dasharray 0.8s ease, stroke-dashoffset 0.8s ease;
+}
+.donut-center-value {
+  fill: #fff;
+  font-size: 22px;
+  font-weight: 700;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+.donut-center-label {
+  fill: var(--muted);
+  font-size: 10px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+.donut-legend {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.donut-legend span::before {
+  content: "";
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  margin-right: 5px;
+  vertical-align: middle;
+}
+.legend-on::before { background: var(--green); }
+.legend-off::before { background: var(--red); }
+.legend-unknown::before { background: var(--amber); }
+
+/* ---- Stats row ---- */
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.stat-card {
+  padding: 16px 18px;
+}
+.stat-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.stat-value {
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.stat-sub {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 3px;
+}
+.color-green { color: var(--green); }
+.color-red { color: var(--red); }
+.color-amber { color: var(--amber); }
+.color-blue { color: var(--blue); }
+
+/* ---- Histogram ---- */
+.histogram-card {
+  padding: 18px 20px;
+  margin-bottom: 16px;
+}
+.histogram-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+.histogram-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 60px;
+}
+.histogram-bar {
+  flex: 1;
+  min-width: 0;
+  border-radius: 3px 3px 0 0;
+  background: var(--blue);
+  opacity: 0.6;
+  transition: height 0.6s ease, opacity 0.2s;
+  position: relative;
+}
+.histogram-bar:hover {
+  opacity: 1;
+}
+.histogram-bar::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 9px;
+  color: var(--text);
+  background: rgba(0,0,0,0.7);
+  padding: 2px 5px;
+  border-radius: 4px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+.histogram-bar:hover::after {
+  opacity: 1;
+}
+.histogram-labels {
+  display: flex;
+  gap: 3px;
+  margin-top: 4px;
+}
+.histogram-labels span {
+  flex: 1;
+  text-align: center;
+  font-size: 8px;
+  color: var(--muted);
+}
+
+/* ---- ASIC Table ---- */
+.table-section {
+  padding: 18px 20px;
+}
+.table-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.table-header h2 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+}
+.table-header .count {
+  font-size: 11px;
+  color: var(--muted);
+}
+.filter-tabs {
+  display: flex;
+  gap: 4px;
+  margin-left: 16px;
+}
+.filter-tab {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--card-border);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.filter-tab:hover {
+  color: var(--text);
+  border-color: rgba(255,255,255,0.15);
+}
+.filter-tab.active {
+  background: var(--blue);
+  color: #fff;
+  border-color: var(--blue);
+}
+.filter-tab .tab-count {
+  margin-left: 4px;
+  opacity: 0.6;
+}
+.filter-input {
+  margin-left: auto;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--text);
+  outline: none;
+  width: 170px;
+  transition: border-color 0.2s;
+}
+.filter-input::placeholder { color: var(--muted); }
+.filter-input:focus { border-color: var(--blue-dim); }
+
+.table-scroll {
+  overflow-y: auto;
+  max-height: 55vh;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--card-border);
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+thead { position: sticky; top: 0; z-index: 1; }
+th {
+  background: rgba(8,12,24,0.85);
+  backdrop-filter: blur(8px);
+  text-align: left;
+  padding: 10px 16px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--card-border);
+  cursor: pointer;
+  user-select: none;
+}
+th:hover { color: var(--text); }
+th .sort-arrow { font-size: 9px; margin-left: 4px; opacity: 0.5; }
+td {
+  padding: 8px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  font-variant-numeric: tabular-nums;
+}
+tr:last-child td { border-bottom: none; }
+tbody tr:hover { background: rgba(255,255,255,0.03); }
+
+/* Status badges */
+.badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.badge-on { background: rgba(52,211,153,0.12); color: var(--green); }
+.badge-off { background: rgba(248,113,113,0.12); color: var(--red); }
+.badge-unknown { background: rgba(251,191,36,0.12); color: var(--amber); }
+
+/* ---- Footer ---- */
+footer {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  background: rgba(8,12,24,0.85);
+  backdrop-filter: blur(16px);
+  border-top: 1px solid rgba(255,255,255,0.05);
+  padding: 8px 28px;
+  font-size: 10px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* ---- Loading state ---- */
+.loading-overlay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 80px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.spinner-wrapper { perspective: 400px; display: inline-flex; }
+.spinner {
+  animation: container-spin 2s linear infinite;
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+@keyframes container-spin {
+  from { transform: rotateZ(0deg); }
+  to   { transform: rotateZ(360deg); }
+}
+.loading-text { animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+/* ---- Responsive ---- */
+@media (max-width: 900px) {
+  .gauge-row { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 640px) {
+  header { padding: 14px 16px 10px; }
+  main { padding: 14px 16px 80px; }
+  .gauge-row { grid-template-columns: 1fr; gap: 12px; }
+  .stats-row { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .stat-value { font-size: 18px; }
+  .filter-tabs { margin-left: 0; width: 100%; order: 3; }
+  .filter-input { width: 120px; }
+  td, th { padding: 7px 10px; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <!-- Isometric shipping container — starshipper blue -->
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="36" height="36">
+      <path d="M50,20 L76,35 L50,50 L24,35 Z" fill="rgba(0,128,255,0.12)"/>
+      <path d="M24,35 L50,50 L50,80 L24,65 Z" fill="rgba(0,128,255,0.55)"/>
+      <path d="M50,50 L76,35 L76,65 L50,80 Z" fill="rgba(0,128,255,0.85)"/>
+      <line x1="56" y1="47" x2="56" y2="72" stroke="rgba(0,128,255,0.35)" stroke-width="1.5"/>
+      <line x1="63" y1="43.5" x2="63" y2="68.5" stroke="rgba(0,128,255,0.35)" stroke-width="1.5"/>
+      <line x1="70" y1="40" x2="70" y2="65" stroke="rgba(0,128,255,0.35)" stroke-width="1.5"/>
+    </svg>
+  </div>
+  <div>
+    <h1>Mining Manager</h1>
+    <div class="subtitle">Shipping Container ASIC Controller</div>
+  </div>
+  <div id="conn-badge" class="conn-badge conn-err">
+    <span class="dot"></span>
+    <span id="conn-text">Connecting</span>
+  </div>
+</header>
+
+<main>
+  <div id="loading" class="loading-overlay">
+    <div class="spinner-wrapper">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="56" height="56" class="spinner">
+        <path d="M50,20 L76,35 L50,50 L24,35 Z" fill="rgba(0,128,255,0.12)"/>
+        <path d="M24,35 L50,50 L50,80 L24,65 Z" fill="rgba(0,128,255,0.55)"/>
+        <path d="M50,50 L76,35 L76,65 L50,80 Z" fill="rgba(0,128,255,0.70)"/>
+      </svg>
+    </div>
+    <span class="loading-text">Loading dashboard...</span>
+  </div>
+
+  <div id="content" style="display:none;">
+
+    <!-- Gauge row: Frequency | Power | ASIC Status Donut -->
+    <section class="gauge-row">
+      <div class="gauge-card glass">
+        <div class="gauge-label">Grid Frequency</div>
+        <svg viewBox="0 0 200 115" width="200" height="115" class="gauge-svg">
+          <path d="M 20 100 A 80 80 0 0 1 180 100" class="gauge-bg"/>
+          <path id="freq-arc" d="M 20 100 A 80 80 0 0 1 180 100" class="gauge-value-arc" stroke="var(--blue)" stroke-dasharray="0 251.33"/>
+          <line id="freq-thresh" class="gauge-threshold-tick" x1="100" y1="100" x2="100" y2="100"/>
+          <text id="freq-text" x="100" y="82" text-anchor="middle" class="gauge-center-value">--</text>
+          <text x="100" y="98" text-anchor="middle" class="gauge-center-unit">Hz</text>
+          <text x="22" y="112" text-anchor="start" class="gauge-min" id="freq-min">48</text>
+          <text x="178" y="112" text-anchor="end" class="gauge-max" id="freq-max">52</text>
+        </svg>
+      </div>
+
+      <div class="gauge-card glass">
+        <div class="gauge-label">Power Usage</div>
+        <svg viewBox="0 0 200 115" width="200" height="115" class="gauge-svg">
+          <path d="M 20 100 A 80 80 0 0 1 180 100" class="gauge-bg"/>
+          <path id="power-arc" d="M 20 100 A 80 80 0 0 1 180 100" class="gauge-value-arc" stroke="var(--blue)" stroke-dasharray="0 251.33"/>
+          <text id="power-text" x="100" y="78" text-anchor="middle" class="gauge-center-value">--</text>
+          <text id="power-unit" x="100" y="95" text-anchor="middle" class="gauge-center-unit">kW</text>
+          <text x="22" y="112" text-anchor="start" class="gauge-min">0</text>
+          <text id="power-max-label" x="178" y="112" text-anchor="end" class="gauge-max">560</text>
+        </svg>
+      </div>
+
+      <div class="gauge-card glass">
+        <div class="gauge-label">ASIC Status</div>
+        <svg viewBox="0 0 140 140" width="140" height="140" class="donut-svg">
+          <!-- Background ring -->
+          <circle cx="70" cy="70" r="52" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="20"/>
+          <!-- Segments rendered by JS -->
+          <circle id="donut-on" cx="70" cy="70" r="52" class="donut-segment" stroke="var(--green)"
+                  stroke-dasharray="0 326.73" stroke-dashoffset="-81.68" transform="rotate(-90 70 70)"/>
+          <circle id="donut-off" cx="70" cy="70" r="52" class="donut-segment" stroke="var(--red)"
+                  stroke-dasharray="0 326.73" stroke-dashoffset="-81.68" transform="rotate(-90 70 70)"/>
+          <circle id="donut-unknown" cx="70" cy="70" r="52" class="donut-segment" stroke="var(--amber)"
+                  stroke-dasharray="0 326.73" stroke-dashoffset="-81.68" transform="rotate(-90 70 70)"/>
+          <text id="donut-value" x="70" y="67" text-anchor="middle" class="donut-center-value">--</text>
+          <text id="donut-label" x="70" y="82" text-anchor="middle" class="donut-center-label">active</text>
+        </svg>
+        <div class="donut-legend">
+          <span class="legend-on" id="legend-on">0 on</span>
+          <span class="legend-off" id="legend-off">0 off</span>
+          <span class="legend-unknown" id="legend-unknown">0 unknown</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Stats row -->
+    <section class="stats-row">
+      <div class="stat-card glass">
+        <div class="stat-label">Network</div>
+        <div class="stat-value" id="net-value">--</div>
+      </div>
+      <div class="stat-card glass">
+        <div class="stat-label">System Health</div>
+        <div class="stat-value" id="health-value">--</div>
+      </div>
+      <div class="stat-card glass">
+        <div class="stat-label">Avg Cycles</div>
+        <div class="stat-value color-blue" id="avg-cycles">--</div>
+      </div>
+      <div class="stat-card glass">
+        <div class="stat-label">Max Cycles</div>
+        <div class="stat-value" id="max-cycles">--</div>
+        <div class="stat-sub" id="max-cycles-id"></div>
+      </div>
+      <div class="stat-card glass">
+        <div class="stat-label">Median Cycles</div>
+        <div class="stat-value color-blue" id="median-cycles">--</div>
+      </div>
+      <div class="stat-card glass">
+        <div class="stat-label">Wear Spread</div>
+        <div class="stat-value" id="wear-spread">--</div>
+        <div class="stat-sub">std deviation</div>
+      </div>
+    </section>
+
+    <!-- Cycle distribution histogram -->
+    <section class="histogram-card glass">
+      <div class="histogram-label">Cycle Distribution</div>
+      <div class="histogram-bars" id="histogram-bars"></div>
+      <div class="histogram-labels" id="histogram-labels"></div>
+    </section>
+
+    <!-- ASIC table -->
+    <section class="table-section glass">
+      <div class="table-header">
+        <h2>ASICs</h2>
+        <span class="count" id="asic-summary"></span>
+        <div class="filter-tabs" id="filter-tabs">
+          <button class="filter-tab active" data-status="all">All</button>
+          <button class="filter-tab" data-status="on">On <span class="tab-count" id="tab-on">0</span></button>
+          <button class="filter-tab" data-status="off">Off <span class="tab-count" id="tab-off">0</span></button>
+          <button class="filter-tab" data-status="unknown">Unknown <span class="tab-count" id="tab-unk">0</span></button>
+        </div>
+        <input type="text" class="filter-input" id="filter" placeholder="Search ID...">
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th data-col="id">ID <span class="sort-arrow"></span></th>
+              <th data-col="status">Status <span class="sort-arrow"></span></th>
+              <th data-col="cycles">Cycles <span class="sort-arrow"></span></th>
+              <th data-col="last_off">Last Offline <span class="sort-arrow"></span></th>
+            </tr>
+          </thead>
+          <tbody id="asic-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<footer>
+  <span id="last-updated">Last updated: --</span>
+  <span id="poll-info"></span>
+</footer>
+
+<script>
+(function() {
+  "use strict";
+
+  var POLL_MS = 10000;
+  var ARC_LEN = Math.PI * 80;  // semicircle radius=80 ≈ 251.33
+  var DONUT_R = 52;
+  var DONUT_C = 2 * Math.PI * DONUT_R; // ≈ 326.73
+
+  var asicData = [];
+  var sortCol = "id", sortAsc = true;
+  var statusFilter = "all";
+  var firstLoad = true;
+
+  var cfg = { max_power: 560, alert_threshold: 49.5, freq_min: 48, freq_max: 52 };
+
+  // ---- DOM refs ----
+  var $ = function(id) { return document.getElementById(id); };
+  var elLoading = $("loading"), elContent = $("content");
+  var elFreqArc = $("freq-arc"), elFreqText = $("freq-text"), elFreqThresh = $("freq-thresh");
+  var elPowerArc = $("power-arc"), elPowerText = $("power-text"), elPowerMax = $("power-max-label");
+  var elDonutOn = $("donut-on"), elDonutOff = $("donut-off"), elDonutUnk = $("donut-unknown");
+  var elDonutValue = $("donut-value"), elDonutLabel = $("donut-label");
+  var elLegendOn = $("legend-on"), elLegendOff = $("legend-off"), elLegendUnk = $("legend-unknown");
+  var elNetValue = $("net-value"), elHealthValue = $("health-value");
+  var elAvgCycles = $("avg-cycles"), elMaxCycles = $("max-cycles"), elMaxId = $("max-cycles-id");
+  var elMedianCycles = $("median-cycles"), elWearSpread = $("wear-spread");
+  var elHistBars = $("histogram-bars"), elHistLabels = $("histogram-labels");
+  var elTbody = $("asic-tbody"), elSummary = $("asic-summary");
+  var elFilter = $("filter");
+  var elUpdated = $("last-updated");
+  var elConnBadge = $("conn-badge"), elConnText = $("conn-text");
+
+  // ---- Helpers ----
+  function escapeHtml(s) {
+    var d = document.createElement("div");
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function formatTime(iso) {
+    if (!iso) return "never";
+    try {
+      var d = new Date(iso);
+      var diff = (Date.now() - d.getTime()) / 1000;
+      if (diff < 60) return Math.floor(diff) + "s ago";
+      if (diff < 3600) return Math.floor(diff / 60) + "m ago";
+      if (diff < 86400) return Math.floor(diff / 3600) + "h ago";
+      return Math.floor(diff / 86400) + "d ago";
+    } catch(e) { return iso; }
+  }
+
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+  function setConn(ok) {
+    elConnBadge.className = "conn-badge " + (ok ? "conn-ok" : "conn-err");
+    elConnText.textContent = ok ? "Connected" : "Disconnected";
+  }
+
+  // ---- Arc gauge helpers ----
+  function arcPoint(cx, cy, r, angleDeg) {
+    var a = angleDeg * Math.PI / 180;
+    return { x: cx + r * Math.cos(a), y: cy - r * Math.sin(a) };
+  }
+
+  function setArc(el, fraction, color) {
+    var f = clamp(fraction, 0, 1);
+    el.setAttribute("stroke-dasharray", (f * ARC_LEN) + " " + ARC_LEN);
+    if (color) el.setAttribute("stroke", color);
+  }
+
+  // ---- Frequency gauge ----
+  function updateFreqGauge(freq) {
+    var frac = (freq - cfg.freq_min) / (cfg.freq_max - cfg.freq_min);
+    var ok = freq > cfg.alert_threshold;
+    setArc(elFreqArc, frac, ok ? "var(--green)" : "var(--red)");
+    elFreqText.textContent = freq.toFixed(2);
+
+    // Threshold tick mark
+    var threshFrac = (cfg.alert_threshold - cfg.freq_min) / (cfg.freq_max - cfg.freq_min);
+    var angle = 180 - threshFrac * 180;
+    var inner = arcPoint(100, 100, 72, angle);
+    var outer = arcPoint(100, 100, 92, angle);
+    elFreqThresh.setAttribute("x1", inner.x);
+    elFreqThresh.setAttribute("y1", inner.y);
+    elFreqThresh.setAttribute("x2", outer.x);
+    elFreqThresh.setAttribute("y2", outer.y);
+  }
+
+  // ---- Power gauge ----
+  function updatePowerGauge(power) {
+    var frac = power / cfg.max_power;
+    var color = frac < 0.7 ? "var(--blue)" : frac < 0.9 ? "var(--amber)" : "var(--red)";
+    setArc(elPowerArc, frac, color);
+    elPowerText.textContent = power.toFixed(0);
+    elPowerMax.textContent = cfg.max_power;
+  }
+
+  // ---- Donut chart ----
+  function updateDonut(onCount, offCount, unknownCount, total) {
+    if (total === 0) {
+      elDonutOn.setAttribute("stroke-dasharray", "0 " + DONUT_C);
+      elDonutOff.setAttribute("stroke-dasharray", "0 " + DONUT_C);
+      elDonutUnk.setAttribute("stroke-dasharray", "0 " + DONUT_C);
+      elDonutValue.textContent = "0";
+      return;
+    }
+
+    var onLen = (onCount / total) * DONUT_C;
+    var offLen = (offCount / total) * DONUT_C;
+    var unkLen = (unknownCount / total) * DONUT_C;
+
+    // Each segment starts where the previous ended
+    elDonutOn.setAttribute("stroke-dasharray", onLen + " " + (DONUT_C - onLen));
+    elDonutOn.setAttribute("stroke-dashoffset", "0");
+
+    elDonutOff.setAttribute("stroke-dasharray", offLen + " " + (DONUT_C - offLen));
+    elDonutOff.setAttribute("stroke-dashoffset", -onLen);
+
+    elDonutUnk.setAttribute("stroke-dasharray", unkLen + " " + (DONUT_C - unkLen));
+    elDonutUnk.setAttribute("stroke-dashoffset", -(onLen + offLen));
+
+    elDonutValue.textContent = onCount;
+    elDonutLabel.textContent = "of " + total + " active";
+    elLegendOn.textContent = onCount + " on";
+    elLegendOff.textContent = offCount + " off";
+    elLegendUnk.textContent = unknownCount + " unknown";
+  }
+
+  // ---- KPI updates ----
+  function updateKPIs(data) {
+    // Store config from server
+    if (data.max_power) cfg.max_power = data.max_power;
+    if (data.alert_threshold) cfg.alert_threshold = data.alert_threshold;
+    if (data.poll_interval) POLL_MS = data.poll_interval * 1000;
+
+    updateFreqGauge(data.grid_frequency);
+    updatePowerGauge(data.power_usage);
+
+    var netOk = data.network_status === 1;
+    elNetValue.textContent = netOk ? "Online" : "Offline";
+    elNetValue.className = "stat-value " + (netOk ? "color-green" : "color-red");
+  }
+
+  function updateHealth(data) {
+    var ok = data.status === "healthy";
+    elHealthValue.textContent = data.status.charAt(0).toUpperCase() + data.status.slice(1);
+    elHealthValue.className = "stat-value " + (ok ? "color-green" : "color-amber");
+  }
+
+  // ---- Wear statistics ----
+  function updateWearStats(data) {
+    if (!data.length) {
+      elAvgCycles.textContent = "--";
+      elMaxCycles.textContent = "--";
+      elMedianCycles.textContent = "--";
+      elWearSpread.textContent = "--";
+      return;
+    }
+
+    var cycles = data.map(function(a) { return a.cycles; });
+    var sum = cycles.reduce(function(s, v) { return s + v; }, 0);
+    var avg = sum / cycles.length;
+
+    // Max
+    var maxVal = 0, maxId = "";
+    for (var i = 0; i < data.length; i++) {
+      if (data[i].cycles > maxVal) {
+        maxVal = data[i].cycles;
+        maxId = data[i].id;
+      }
+    }
+
+    // Median
+    var sorted = cycles.slice().sort(function(a, b) { return a - b; });
+    var mid = Math.floor(sorted.length / 2);
+    var median = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+
+    // Std deviation
+    var sqDiffs = cycles.map(function(v) { return (v - avg) * (v - avg); });
+    var stdDev = Math.sqrt(sqDiffs.reduce(function(s, v) { return s + v; }, 0) / cycles.length);
+
+    elAvgCycles.textContent = avg.toFixed(1);
+    elMaxCycles.textContent = maxVal;
+    elMaxId.textContent = maxId;
+    elMedianCycles.textContent = median.toFixed(0);
+    elWearSpread.textContent = stdDev.toFixed(1);
+
+    // Color max cycles based on how high it is
+    elMaxCycles.className = "stat-value " + (maxVal > 70 ? "color-red" : maxVal > 50 ? "color-amber" : "color-blue");
+  }
+
+  // ---- Histogram ----
+  function updateHistogram(data) {
+    if (!data.length) {
+      elHistBars.innerHTML = "";
+      elHistLabels.innerHTML = "";
+      return;
+    }
+
+    var maxCycle = 0;
+    for (var i = 0; i < data.length; i++) {
+      if (data[i].cycles > maxCycle) maxCycle = data[i].cycles;
+    }
+
+    var bucketSize = 10;
+    var bucketCount = Math.max(1, Math.ceil((maxCycle + 1) / bucketSize));
+    var buckets = [];
+    for (var b = 0; b < bucketCount; b++) buckets.push(0);
+
+    for (var j = 0; j < data.length; j++) {
+      var idx = Math.min(Math.floor(data[j].cycles / bucketSize), bucketCount - 1);
+      buckets[idx]++;
+    }
+
+    var maxBucket = Math.max.apply(null, buckets);
+
+    var barsHtml = "";
+    var labelsHtml = "";
+    for (var k = 0; k < buckets.length; k++) {
+      var pct = maxBucket > 0 ? (buckets[k] / maxBucket * 100) : 0;
+      var lo = k * bucketSize;
+      var hi = lo + bucketSize - 1;
+      barsHtml += '<div class="histogram-bar" style="height:' + Math.max(2, pct) + '%" data-tooltip="' + lo + '-' + hi + ': ' + buckets[k] + ' ASICs"></div>';
+      labelsHtml += '<span>' + lo + '-' + hi + '</span>';
+    }
+
+    elHistBars.innerHTML = barsHtml;
+    elHistLabels.innerHTML = labelsHtml;
+  }
+
+  // ---- ASIC table ----
+  function updateASICData(data) {
+    asicData = data;
+
+    var onCount = 0, offCount = 0, unkCount = 0;
+    for (var i = 0; i < data.length; i++) {
+      if (data[i].status === "on") onCount++;
+      else if (data[i].status === "off") offCount++;
+      else unkCount++;
+    }
+
+    updateDonut(onCount, offCount, unkCount, data.length);
+
+    // Tab counts
+    $("tab-on").textContent = onCount;
+    $("tab-off").textContent = offCount;
+    $("tab-unk").textContent = unkCount;
+
+    var parts = [];
+    parts.push(data.length + " total");
+    elSummary.textContent = parts.join("");
+
+    updateWearStats(data);
+    updateHistogram(data);
+    renderTable();
+  }
+
+  function renderTable() {
+    var textFilter = elFilter.value.toLowerCase();
+    var rows = asicData.filter(function(a) {
+      if (statusFilter !== "all" && a.status !== statusFilter) return false;
+      if (textFilter && a.id.toLowerCase().indexOf(textFilter) === -1) return false;
+      return true;
+    });
+
+    rows.sort(function(a, b) {
+      var va = a[sortCol], vb = b[sortCol];
+      if (va === null || va === undefined) va = "";
+      if (vb === null || vb === undefined) vb = "";
+      if (typeof va === "number") return sortAsc ? va - vb : vb - va;
+      va = String(va); vb = String(vb);
+      return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+    });
+
+    var html = "";
+    for (var i = 0; i < rows.length; i++) {
+      var a = rows[i];
+      html += "<tr>" +
+        "<td>" + escapeHtml(a.id) + "</td>" +
+        '<td><span class="badge badge-' + escapeHtml(a.status) + '">' + escapeHtml(a.status) + "</span></td>" +
+        "<td>" + a.cycles + "</td>" +
+        "<td>" + formatTime(a.last_off) + "</td>" +
+        "</tr>";
+    }
+    elTbody.innerHTML = html;
+  }
+
+  // ---- Sorting ----
+  document.querySelectorAll("th[data-col]").forEach(function(th) {
+    th.addEventListener("click", function() {
+      var col = th.getAttribute("data-col");
+      if (sortCol === col) { sortAsc = !sortAsc; }
+      else { sortCol = col; sortAsc = true; }
+      document.querySelectorAll("th[data-col] .sort-arrow").forEach(function(el) { el.textContent = ""; });
+      th.querySelector(".sort-arrow").textContent = sortAsc ? "\u25B2" : "\u25BC";
+      renderTable();
+    });
+  });
+
+  // ---- Status filter tabs ----
+  document.querySelectorAll(".filter-tab").forEach(function(btn) {
+    btn.addEventListener("click", function() {
+      document.querySelectorAll(".filter-tab").forEach(function(b) { b.classList.remove("active"); });
+      btn.classList.add("active");
+      statusFilter = btn.getAttribute("data-status");
+      renderTable();
+    });
+  });
+
+  // ---- Text filter ----
+  elFilter.addEventListener("input", renderTable);
+
+  // ---- Polling ----
+  function fetchData() {
+    Promise.all([
+      fetch("/dashboard").then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; }),
+      fetch("/asics").then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; }),
+      fetch("/health").then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; })
+    ]).then(function(results) {
+      var dash = results[0], asics = results[1], health = results[2];
+      var anyOk = false;
+
+      if (dash) { updateKPIs(dash); anyOk = true; }
+      if (asics) { updateASICData(asics); anyOk = true; }
+      if (health) { updateHealth(health); anyOk = true; }
+
+      setConn(anyOk);
+
+      if (firstLoad && anyOk) {
+        elLoading.style.display = "none";
+        elContent.style.display = "block";
+        firstLoad = false;
+      }
+
+      elUpdated.textContent = "Last updated: " + new Date().toLocaleTimeString();
+    }).catch(function() {
+      setConn(false);
+    });
+  }
+
+  fetchData();
+  setInterval(fetchData, POLL_MS);
+})();
+</script>
+</body>
+</html>

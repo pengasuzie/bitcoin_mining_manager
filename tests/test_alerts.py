@@ -8,6 +8,7 @@ def clear_cooldown():
     """Reset alert cooldown state between tests."""
     from bitcoin_mining_manager import alerts
     alerts._last_alert_times.clear()
+    alerts._active_alerts.clear()
 
 
 def test_send_alert_twilio_only():
@@ -91,3 +92,44 @@ def test_cooldown_expires(monkeypatch):
         alerts.send_alert("freq low again", alert_type="freq_low")
 
         assert alerts.twilio_client.messages.create.call_count == 2
+
+
+def test_clear_alert_sends_recovery():
+    """clear_alert should send a recovery message for an active alert."""
+    with patch("bitcoin_mining_manager.alerts.GRAFANA_API_KEY", ""), \
+         patch("bitcoin_mining_manager.alerts.ALERT_COOLDOWN", 300):
+        from bitcoin_mining_manager import alerts
+        alerts.twilio_client = MagicMock()
+
+        alerts.send_alert("freq low", alert_type="freq_low")
+        alerts.clear_alert("freq_low", "Frequency recovered to 50.1 Hz")
+
+        assert alerts.twilio_client.messages.create.call_count == 2
+        second_call = alerts.twilio_client.messages.create.call_args_list[1]
+        assert "recovered" in second_call.kwargs["body"].lower()
+
+
+def test_clear_alert_noop_when_not_active():
+    """clear_alert should do nothing if the alert was never fired."""
+    with patch("bitcoin_mining_manager.alerts.GRAFANA_API_KEY", ""):
+        from bitcoin_mining_manager import alerts
+        alerts.twilio_client = MagicMock()
+
+        alerts.clear_alert("freq_low", "recovered")
+
+        alerts.twilio_client.messages.create.assert_not_called()
+
+
+def test_clear_alert_resets_cooldown():
+    """After clear_alert, the same alert_type should fire immediately again."""
+    with patch("bitcoin_mining_manager.alerts.GRAFANA_API_KEY", ""), \
+         patch("bitcoin_mining_manager.alerts.ALERT_COOLDOWN", 300):
+        from bitcoin_mining_manager import alerts
+        alerts.twilio_client = MagicMock()
+
+        alerts.send_alert("freq low", alert_type="freq_low")
+        alerts.clear_alert("freq_low")
+        alerts.send_alert("freq low again", alert_type="freq_low")
+
+        # 3 calls: alert, clear, re-alert
+        assert alerts.twilio_client.messages.create.call_count == 3

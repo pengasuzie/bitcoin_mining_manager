@@ -2,6 +2,7 @@ import asyncio
 import sqlite3
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiohttp
 import pytest
 
 
@@ -56,6 +57,8 @@ def run_control(setup_db, mock_redis, mock_session, freq, power):
          patch("bitcoin_mining_manager.asic_control.ASIC_POWER", 3.5), \
          patch("bitcoin_mining_manager.asic_control.ALERT_THRESHOLD", 49.5), \
          patch("bitcoin_mining_manager.asic_control.ASIC_API_URL", "http://test:4028"), \
+         patch("bitcoin_mining_manager.asic_control.ASIC_API_TIMEOUT", 10), \
+         patch("bitcoin_mining_manager.asic_control.ASIC_API_RETRIES", 2), \
          patch("bitcoin_mining_manager.asic_control.asic_count_gauge") as mock_gauge, \
          patch("bitcoin_mining_manager.asic_control.metrics", {"active_asics": 0}):
         mock_db.cursor = cursor
@@ -132,3 +135,50 @@ class TestControlAsics:
         assert count == 2
         assert store.get("asic:asic-0:status") == "on"
         assert store.get("asic:asic-1:status") == "on"
+
+
+class TestAsicRequest:
+    def test_retries_on_timeout(self):
+        """_asic_request should retry on timeout, then succeed."""
+        response = AsyncMock()
+        response.status = 200
+
+        call_count = [0]
+
+        def make_ctx(url, **kwargs):
+            call_count[0] += 1
+            ctx = AsyncMock()
+            if call_count[0] == 1:
+                ctx.__aenter__ = AsyncMock(side_effect=asyncio.TimeoutError())
+            else:
+                ctx.__aenter__ = AsyncMock(return_value=response)
+            ctx.__aexit__ = AsyncMock(return_value=False)
+            return ctx
+
+        session = MagicMock()
+        session.get = MagicMock(side_effect=make_ctx)
+
+        with patch("bitcoin_mining_manager.asic_control.ASIC_API_TIMEOUT", 1), \
+             patch("bitcoin_mining_manager.asic_control.ASIC_API_RETRIES", 3):
+            from bitcoin_mining_manager.asic_control import _asic_request
+            result = asyncio.run(_asic_request(session, "http://test/start?asic=x"))
+            assert result is True
+            assert call_count[0] == 2
+
+    def test_fails_after_max_retries(self):
+        """_asic_request should return False after exhausting retries."""
+        def make_ctx(url, **kwargs):
+            ctx = AsyncMock()
+            ctx.__aenter__ = AsyncMock(side_effect=asyncio.TimeoutError())
+            ctx.__aexit__ = AsyncMock(return_value=False)
+            return ctx
+
+        session = MagicMock()
+        session.get = MagicMock(side_effect=make_ctx)
+
+        with patch("bitcoin_mining_manager.asic_control.ASIC_API_TIMEOUT", 1), \
+             patch("bitcoin_mining_manager.asic_control.ASIC_API_RETRIES", 2):
+            from bitcoin_mining_manager.asic_control import _asic_request
+            result = asyncio.run(_asic_request(session, "http://test/start?asic=x"))
+            assert result is False
+            assert session.get.call_count == 2

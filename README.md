@@ -11,7 +11,7 @@ Designed for a shipping container deployment with 160 ASICs, running on a Beelin
 - **Cycle-fair ASIC scheduling** — prioritises units with fewest on/off cycles for even wear distribution across 160 miners
 - **Local fallback mining** — automatically starts a Stratum server during internet outages to maintain load stability
 - **Internet bonding** — bonds two connections (4G LTE + Starlink) via OpenMPTCProuter for <1% share loss
-- **Real-time dashboards** — Prometheus metrics + Grafana visualisation + Flask REST API
+- **Real-time dashboards** — built-in HTML dashboard at `/`, Prometheus metrics + Grafana visualisation, Flask REST API
 - **SMS/Grafana alerts** — Twilio SMS and Grafana notifications for critical events
 
 ## Project Structure
@@ -25,7 +25,8 @@ bitcoin_mining_manager/
 ├── sensors.py           # Grid frequency (Modbus) + power sensors (MQTT)
 ├── asic_control.py      # ASIC start/stop logic with cycle-fair scheduling
 ├── networking.py        # Internet bonding + dummy Stratum pool fallback
-├── api.py               # Flask dashboard endpoint
+├── api.py               # Flask REST API + dashboard serving
+├── dashboard.html       # Self-contained HTML dashboard (served at /)
 └── alerts.py            # Twilio SMS + Grafana alerting
 tests/
 ├── test_asic_control.py # Core scheduling algorithm tests
@@ -133,12 +134,88 @@ Use `MOCK_MODE=true` in `.env` to run the application without physical hardware.
 - **Network**: NETGEAR GS308 managed switch, USB Ethernet adapter for bonding
 - **Sensors**: SEL-735 Power Quality Meter (Modbus TCP), current/voltage transformers (MQTT)
 
-## Development
+## Dashboard
+
+The built-in HTML dashboard is served at `http://{API_HOST}:{API_PORT}/` (default `http://127.0.0.1:5000/`). It shows:
+
+- **KPIs**: grid frequency, active ASICs, power usage, network status, system health
+- **ASIC table**: sortable, filterable list of all 160 ASICs with status, cycle count, and last offline time
+- **Auto-refresh**: polls the API every 10 seconds
+
+No extra dependencies — it's a single self-contained HTML file with inline CSS/JS.
+
+### API endpoints
+
+| Endpoint | Description |
+|---|---|
+| `GET /` | HTML dashboard |
+| `GET /dashboard` | JSON: grid frequency, active ASICs, power, network status |
+| `GET /asics` | JSON: per-ASIC status, cycle count, last offline time |
+| `GET /health` | JSON: service health (Redis, SQLite) |
+
+## Mock Mode (development without hardware)
+
+Set `MOCK_MODE=true` to run the full application without physical sensors, ASICs, or networking hardware. In mock mode:
+
+- **Grid frequency** returns a fixed 50.0 Hz
+- **Power sensors** return 560.0 kW (full capacity)
+- **MQTT and internet bonding** are skipped entirely
+- **Redis** is optional — the app starts without it (ASIC statuses show as "unknown")
+- **ASIC API calls** will fail silently (no real hardware), but the control loop continues
+
+### Quick start (mock mode)
 
 ```bash
-# Run with mock sensors (no hardware needed)
+# 1. Start Redis (optional, but needed for ASIC status badges)
+docker compose up -d redis
+
+# 2. Register 160 ASICs in the database
+MOCK_MODE=true python -m bitcoin_mining_manager register --count 160
+
+# 3. Start the application
 MOCK_MODE=true python -m bitcoin_mining_manager
+
+# 4. Open the dashboard
+open http://127.0.0.1:5000/
 ```
+
+### Seed realistic demo data
+
+To populate the dashboard with realistic-looking ASIC statuses and cycle counts:
+
+```bash
+python3 -c "
+import redis, random, sqlite3
+from datetime import datetime, timedelta
+
+r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+conn = sqlite3.connect('asic_cycles.db')
+c = conn.cursor()
+
+for i in range(160):
+    aid = f'asic-{i:03d}'
+    roll = random.random()
+    if roll < 0.75: r.setex(f'asic:{aid}:status', 300, 'on')
+    elif roll < 0.95: r.setex(f'asic:{aid}:status', 300, 'off')
+    cycles = random.randint(0, 85)
+    last_off = (datetime.now() - timedelta(hours=random.randint(1, 720))).isoformat() if cycles else None
+    c.execute('UPDATE asics SET cycles=?, last_off=? WHERE id=?', (cycles, last_off, aid))
+
+conn.commit()
+conn.close()
+print('Seeded 160 ASICs with mock data')
+"
+```
+
+### Switching to production
+
+To run with real hardware, remove `MOCK_MODE` (or set it to `false`) and ensure all services are configured:
+
+1. Set real sensor IPs in `.env` (`GRID_SENSOR_IP`, `ASIC_API_URL`, `MQTT_BROKER`)
+2. Start Redis and Mosquitto: `sudo systemctl enable --now redis-server mosquitto`
+3. Run: `python -m bitcoin_mining_manager`
+
+## Development
 
 ### Development tasks
 

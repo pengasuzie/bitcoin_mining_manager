@@ -1,0 +1,30 @@
+[Unit]
+Description=Bitcoin Mining Manager — ASIC controller
+Documentation=https://github.com/your-org/bitcoin-mining-manager
+After=network-online.target redis.service mosquitto.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mining
+Group=mining
+WorkingDirectory=/opt/bitcoin-mining-manager
+EnvironmentFile=/opt/bitcoin-mining-manager/.env
+ExecStart=/opt/bitcoin-mining-manager/.venv/bin/python -m bitcoin_mining_manager
+Restart=on-failure
+RestartSec=10
+WatchdogSec=120
+
+# Graceful shutdown (SIGTERM handled by the app)
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/bitcoin-mining-manager
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

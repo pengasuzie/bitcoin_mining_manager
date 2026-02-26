@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 twilio_client = None
 _last_alert_times = {}
+_active_alerts = set()
 
 
 def init_alerts():
@@ -36,7 +37,25 @@ def send_alert(message, alert_type=None):
     if key in _last_alert_times and now - _last_alert_times[key] < ALERT_COOLDOWN:
         return
     _last_alert_times[key] = now
+    _active_alerts.add(key)
 
+    _dispatch(message)
+
+
+def clear_alert(alert_type, message=None):
+    """Send a recovery notification when an alert condition clears.
+
+    Only sends if the alert_type was previously active.
+    """
+    if alert_type not in _active_alerts:
+        return
+    _active_alerts.discard(alert_type)
+    _last_alert_times.pop(alert_type, None)
+    _dispatch(message or f"Resolved: {alert_type}")
+
+
+def _dispatch(message):
+    """Send message via configured channels."""
     try:
         if GRAFANA_API_KEY:
             grafana = GrafanaFace(auth=GRAFANA_API_KEY, host=GRAFANA_HOST)

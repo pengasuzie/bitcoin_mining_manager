@@ -25,6 +25,10 @@ def init_sensors():
     modbus_client = modbus.ModbusTcpClient(GRID_SENSOR_IP, port=502)
     logger.info(f"Modbus client configured for {GRID_SENSOR_IP}")
 
+    if MOCK_MODE:
+        logger.info("MQTT skipped in mock mode")
+        return
+
     mqtt_client = mqtt.Client()
     mqtt_client.on_connect = _on_mqtt_connect
     mqtt_client.on_message = _on_mqtt_message
